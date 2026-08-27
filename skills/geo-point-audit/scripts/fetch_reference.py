@@ -127,7 +127,26 @@ def overpass(query, quiet=False):
     return None
 
 
-def osm_api(bb, quiet=False):
+MAX_SPLIT_DEPTH = 3          # up to 64 sub-boxes; ample for a dense city centre
+
+
+def _subdivide(south, west, north, east, quiet, depth, why):
+    """Quarter a box and merge the results. The API's own advice for an overflow."""
+    if not quiet and depth == 0:
+        print('    box %s - splitting into quarters' % why, file=sys.stderr, flush=True)
+    mid_lat, mid_lon = (south + north) / 2.0, (west + east) / 2.0
+    quads = [(south, west, mid_lat, mid_lon), (south, mid_lon, mid_lat, east),
+             (mid_lat, west, north, mid_lon), (mid_lat, mid_lon, north, east)]
+    merged = []
+    for q in quads:
+        sub = osm_api('%f,%f,%f,%f' % q, quiet=True, depth=depth + 1)
+        if sub:
+            merged.extend(sub['elements'])
+        time.sleep(1)
+    return {'elements': merged} if merged else None
+
+
+def osm_api(bb, quiet=False, depth=0):
     """Fall back to the OSM core API - the service behind openstreetmap.org itself.
 
     This is separate infrastructure from Overpass and markedly more reliable, because it
@@ -137,16 +156,24 @@ def osm_api(bb, quiet=False):
 
     The tradeoff is that it cannot filter server-side, so it returns everything in the box
     and we filter here. That is only affordable because the boxes are already small - which
-    is another reason the clustering matters. API limits: 0.25 square degrees and 50k nodes.
+    is another reason the clustering matters. API limits: 0.25 square degrees and 50k nodes,
+    and a dense city centre will breach the node cap even in a small box, so an overflow
+    subdivides rather than giving up.
     """
-    s, w, n, e = [float(x) for x in bb.split(',')]
-    if (n - s) * (e - w) > 0.24:
-        if not quiet:
-            print('    box too large for the OSM API (limit 0.25 sq deg)', file=sys.stderr)
-        return None
-    url = 'https://api.openstreetmap.org/api/0.6/map?bbox=%f,%f,%f,%f' % (w, s, e, n)
+    south, west, north, east = [float(x) for x in bb.split(',')]
+    if (north - south) * (east - west) > 0.24 and depth < MAX_SPLIT_DEPTH:
+        return _subdivide(south, west, north, east, quiet, depth, 'over the 0.25 sq deg limit')
+    url = 'https://api.openstreetmap.org/api/0.6/map?bbox=%f,%f,%f,%f' % (west, south, east, north)
     try:
         raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120).read()
+    except urllib.error.HTTPError as ex:
+        # 400 here is nearly always "You requested too many nodes (limit is 50000)" - a
+        # dense area rather than a malformed request. Quartering is the documented remedy.
+        if ex.code == 400 and depth < MAX_SPLIT_DEPTH:
+            return _subdivide(south, west, north, east, quiet, depth, 'too dense')
+        if not quiet:
+            print('    OSM API failed (HTTP %s)' % ex.code, file=sys.stderr)
+        return None
     except Exception as ex:
         if not quiet:
             print('    OSM API failed (%s)' % str(ex)[:60], file=sys.stderr)
