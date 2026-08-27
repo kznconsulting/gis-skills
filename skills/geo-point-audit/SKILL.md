@@ -36,6 +36,9 @@ uvx python $S/verify_points.py                             --work $W     # slow:
 uvx python $S/fetch_reference.py                           --work $W --osm-filter 'amenity=hospital'
 uvx --with pyproj python $S/adjudicate.py                  --work $W
 uvx python $S/fetch_context.py                             --work $W
+# optional, and the stricter test - see "On the property, not just near it" below:
+# uvx --with pyshp --with pyproj python $S/check_parcels.py --work $W --parcels <file>
+# uvx --with pyproj python $S/adjudicate.py                 --work $W   # re-run to fold it in
 # ...write copy.json here (see below)...
 uvx python $S/build_report.py                              --work $W --out report.html
 ```
@@ -72,11 +75,37 @@ Read `references/methodology.md` before you defend a verdict or change a thresho
 
 | Verdict | Test |
 |---|---|
-| **Correct** | inside the building outline, or within 50 m of it, or within 150 m of the consensus location |
+| **Correct** | inside the building outline, or within 50 m of it, or within 150 m of consensus - **and** not sitting on a road or outside its parcel |
 | **Marginal** | 150-350 m from consensus and clear of the outline |
 | **Wrong** | beyond that |
 
 Offset alone never decides it. A hospital campus can be 300 m across, so a point on the correct building can still sit 210 m from the campus centre, while a point 162 m out can be on a neighbour's lot. **The footprint test outranks the distance** - that is why the table shows both columns, and why the report carries a caption explaining the apparent inconsistency before a reader spots it and doubts the whole thing.
+
+### On the property, not just near it
+
+Close to the right building is not the same as ON the parcel. A point in the road
+right-of-way passes every distance test here and is still dropped by any parcel join,
+tax-roll lookup, or service-area analysis - and the audit will have called it correct.
+This is the common case, not the exotic one: on the reference layer, **7 of the 19
+points that originally passed reverse-geocode to a street rather than a site.**
+
+Two checks address it:
+
+- **Free, always on.** A recorded point whose reverse geocode is a road (`class=highway`)
+  can no longer be `OK`. It is reported under "On the roadway, not the site" in
+  `findings.md`. This is a signal, not proof - a large campus with an internal drive can
+  trip it - so it downgrades to `MINOR` rather than condemning the point.
+- **Authoritative, when you have the data.** `check_parcels.py --parcels <shp|geojson>`
+  tests whether the recorded point falls inside the parcel containing the facility, and
+  where it does not, proposes a coordinate **guaranteed inside** the boundary (the
+  centroid when that is safely interior, otherwise a grid-searched point furthest from
+  any edge - an L-shaped parcel's centroid can fall outside it). `adjudicate.py` then
+  uses that as the corrected coordinate, because a correction that still fails the join
+  has not corrected anything.
+
+Parcels are county data with no national source, so the file has to come from the user.
+Everything else works without it; ask whether they have parcel boundaries when the
+audit is feeding a parcel-based workflow.
 
 ### Always check for a systematic shift first
 

@@ -136,9 +136,14 @@ def main():
     ap.add_argument('--work', default='./audit-work')
     ap.add_argument('--out', default='report.html')
     ap.add_argument('--template')
+    ap.add_argument('--live', action='store_true',
+                    help='build the local live-imagery variant instead of the self-contained '
+                         'artifact: same report, but the inspector is a real map with satellite '
+                         'tiles. Needs the network, so it cannot be published as an Artifact.')
     a = ap.parse_args()
     W = a.work
-    tpl_path = a.template or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'template.html')
+    tpl_name = 'template-live.html' if a.live else 'template.html'
+    tpl_path = a.template or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', tpl_name)
 
     rows = json.load(open(os.path.join(W, 'verdict.json'), encoding='utf-8'))
     meta = json.load(open(os.path.join(W, 'meta.json'), encoding='utf-8'))
@@ -182,7 +187,7 @@ def main():
             fpt = 'on the outline (%d m)' % r['edge_m']
         else:
             fpt = '%s outside' % fmt(r['edge_m'])
-        rd = roads.get(str(r['idx']), {}).get('roads', [])
+        rd = [] if a.live else roads.get(str(r['idx']), {}).get('roads', [])
         extra, extra_label = None, None
         for k, v in (r.get('rec') or {}).items():
             if isinstance(v, (int, float)) and v and k.lower() not in ('objectid', 'fid', 'id', 'shape'):
@@ -278,6 +283,17 @@ def main():
         'LEDE_MAP': copy.get('lede_map',
             'Boundaries are US Census TIGER; points are the source coordinates reprojected to WGS&nbsp;84. '
             'The wrong points are numbered by severity.'),
+        'LEDE_INSPECT_LIVE': copy.get('lede_inspect_live',
+            'Use the arrows, the arrow keys, or the list to move through the points, worst first. '
+            'The map is live satellite imagery, so you can pan and zoom to check any point for '
+            'yourself. <b class="mono" style="color:var(--bad)">Red</b> is where the data puts it; '
+            '<b class="mono" style="color:var(--ok)">green</b> is where it actually stands, and the '
+            'blue outline is the mapped building.'),
+        'CAPTION_INSPECT_LIVE': copy.get('caption_inspect_live',
+            'This build loads map tiles from Esri and OpenStreetMap, so it needs a network '
+            'connection and is a local file rather than a shareable link. The self-contained '
+            'artifact build is the one to hand to other people; this one is for satisfying '
+            'yourself that a finding is real.'),
         'LEDE_INSPECT': copy.get('lede_inspect',
             'Use the arrows, the arrow keys, or the list to move through the points, worst first. Streets are '
             'US Census TIGER centrelines and the blue outline is the mapped building. '

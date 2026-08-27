@@ -83,6 +83,13 @@ ranks those backwards.
 A pass looks like this: both markers inside the building outline, 17 m apart, and the recorded
 coordinate reverse-geocodes to the hospital's own emergency entrance.
 
+**On the property, not just near it.** Close to the right building is not the same as inside the
+parcel. A point in the road right-of-way passes every distance test and is still dropped by any
+parcel join — on the reference layer, 7 of the 19 points that originally passed reverse-geocode to
+a street rather than a site. Points on roads are flagged automatically; supply parcel boundaries
+with `check_parcels.py` and the audit tests containment properly and proposes a coordinate
+guaranteed inside the boundary.
+
 **Systematic shift is checked first.** If every bad point moves the same way by the same amount,
 the finding is "your CRS handling is wrong", not "these points are wrong" — a completely different
 repair, and reporting the individual points would send you chasing symptoms.
@@ -200,6 +207,7 @@ Deeper reference material, loaded by the agent only when needed:
 
 | Document | Covers |
 |---|---|
+| [`check_parcels.py`](skills/geo-point-audit/scripts/check_parcels.py) | The parcel-containment test, run it with your own boundary file |
 | [`methodology.md`](skills/geo-point-audit/references/methodology.md) | Verdict rules, thresholds, and what the audit cannot tell you |
 | [`data-sources.md`](skills/geo-point-audit/references/data-sources.md) | Every endpoint, its parameters, and its quirks |
 | [`troubleshooting.md`](skills/geo-point-audit/references/troubleshooting.md) | Verifying the artifact, plus the traps that cost real time |

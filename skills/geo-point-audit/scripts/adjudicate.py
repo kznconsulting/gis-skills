@@ -116,6 +116,8 @@ def main():
     ev = {e['idx']: e for e in json.load(open(os.path.join(W, 'evidence.json'), encoding='utf-8'))}
     fp_path = os.path.join(W, 'footprints.json')
     fps = json.load(open(fp_path, encoding='utf-8'))['matched'] if os.path.exists(fp_path) else {}
+    pc_path = os.path.join(W, 'parcels.json')
+    parcels = json.load(open(pc_path, encoding='utf-8')) if os.path.exists(pc_path) else {}
 
     rows = []
     for p in pts:
@@ -161,6 +163,21 @@ def main():
             v = 'WRONG'
 
         rv = e.get('reverse') or {}
+
+        # Being close to the right building is not the same as being ON the property.
+        # A point in the road right-of-way passes every distance test and is still
+        # dropped by any parcel join, so these two checks can only ever downgrade.
+        pc = parcels.get(str(p['idx'])) or {}
+        on_road = rv.get('class') == 'highway'
+        outside_parcel = pc.get('site_parcel_found') and not pc.get('recorded_inside')
+        if v == 'OK' and (outside_parcel or (on_road and not pc)):
+            v = 'MINOR'
+        if outside_parcel and pc.get('suggest'):
+            # relocate to a point guaranteed inside the boundary, which is the whole
+            # point of the exercise - a corrected coordinate that still fails the join
+            # has not corrected anything
+            rlat, rlon = pc['suggest']
+            off = hav(pt, (rlat, rlon))
         rows.append(dict(
             idx=p['idx'], name=p['name'], name_raw=p['name_raw'], addr=p['addr'],
             lat=p['lat'], lon=p['lon'], verdict=v, offset_m=round(off), spread_m=round(spread),
@@ -170,6 +187,7 @@ def main():
             sources=[{'src': s[0], 'lat': round(s[1][0], 6), 'lon': round(s[1][1], 6), 'm': s[2],
                       'used': s[0] in keptset} for s in srcs],
             n_agree=len(kept), n_reject=len(rejected),
+            on_roadway=on_road, parcel=pc or None,
             bearing=round(bearing(pt, (rlat, rlon))) if off > 20 else None,
             rec=p['rec'], src_x=p['src_x'], src_y=p['src_y']))
 
@@ -257,6 +275,23 @@ def main():
                                                  else 'no outline'))
             off = '%.2f km' % (r['offset_m'] / 1000) if r['offset_m'] >= 1000 else '%d m' % r['offset_m']
             L.append('| %s | %s | %s | %s | %s |' % (off, r['name'], r['verdict'], at, fpt))
+    roadish = [r for r in rows if r.get('on_roadway')]
+    if roadish:
+        L.append('\n## On the roadway, not the site\n')
+        L.append('These reverse-geocode to a street. Close to the building is not the same as ON the\n'
+                 'property: a point in the right-of-way passes every distance test and is still dropped\n'
+                 'by a parcel join. Supply parcel boundaries via `check_parcels.py` to test this properly.\n')
+        for r in sorted(roadish, key=lambda r: -r['offset_m']):
+            L.append('- %s: %d m, sits on %s' % (r['name'], r['offset_m'], r.get('at_name') or 'a road'))
+    pcs = [r for r in rows if (r.get('parcel') or {}).get('site_parcel_found')]
+    if pcs:
+        outp = [r for r in pcs if not r['parcel'].get('recorded_inside')]
+        L.append('\n## Parcel boundary test\n')
+        L.append('- %d of %d points have an identifiable site parcel; **%d fall outside it**.'
+                 % (len(pcs), len(rows), len(outp)))
+        for r in sorted(outp, key=lambda r: -(r['parcel'].get('move_m') or 0)):
+            L.append('  - %s: %d m outside the parcel; corrected point moves it %d m inside'
+                     % (r['name'], r['parcel'].get('edge_m') or 0, r['parcel'].get('move_m') or 0))
     near = [r for r in rows if r['verdict'] == 'OK' and r['offset_m'] > a.ok_consensus]
     if near:
         L.append('\n## Passed on the footprint test despite a large offset\n')
