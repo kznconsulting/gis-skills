@@ -51,6 +51,17 @@ farm track, another on a delicatessen, a third on a college playing field.
 
 ![Inspector](docs/example-inspector.png)
 
+**Two outputs, deliberately.** The artifact above is the shareable deliverable: self-contained,
+private, works offline, no tile server involved. `build_live_map.py` also writes a plain Leaflet
+page for local use, where satellite imagery settles in one second what a building outline argues
+for in a paragraph.
+
+![Live map](docs/example-live-map.png)
+
+Above: the Kohala Hospital point sitting on a roadside deli, with the error vector running east
+toward the real hospital. Use the artifact to tell people what you found; use the live map to
+convince yourself first.
+
 ## How it works
 
 **Agreement across independent sources.** A coordinate is only as trustworthy as the number of

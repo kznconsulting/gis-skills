@@ -139,14 +139,14 @@ def _subdivide(south, west, north, east, quiet, depth, why):
              (mid_lat, west, north, mid_lon), (mid_lat, mid_lon, north, east)]
     merged = []
     for q in quads:
-        sub = osm_api('%f,%f,%f,%f' % q, quiet=True, depth=depth + 1)
+        sub = osm_api('%f,%f,%f,%f' % q, quiet=quiet, depth=depth + 1)
         if sub:
             merged.extend(sub['elements'])
-        time.sleep(1)
+        time.sleep(3)
     return {'elements': merged} if merged else None
 
 
-def osm_api(bb, quiet=False, depth=0):
+def osm_api(bb, quiet=False, depth=0, tries=3):
     """Fall back to the OSM core API - the service behind openstreetmap.org itself.
 
     This is separate infrastructure from Overpass and markedly more reliable, because it
@@ -171,6 +171,16 @@ def osm_api(bb, quiet=False, depth=0):
         # dense area rather than a malformed request. Quartering is the documented remedy.
         if ex.code == 400 and depth < MAX_SPLIT_DEPTH:
             return _subdivide(south, west, north, east, quiet, depth, 'too dense')
+        # 509 is Bandwidth Limit Exceeded and 429 is rate limiting. Both are transient
+        # quotas that refill, so waiting recovers where giving up would strand every
+        # remaining cluster - which is exactly what happened before this branch existed.
+        if ex.code in (429, 509) and tries > 0:
+            wait = 30 * (4 - tries)
+            if not quiet:
+                print('    OSM API quota hit (HTTP %s) - waiting %ds' % (ex.code, wait),
+                      file=sys.stderr, flush=True)
+            time.sleep(wait)
+            return osm_api(bb, quiet=quiet, depth=depth, tries=tries - 1)
         if not quiet:
             print('    OSM API failed (HTTP %s)' % ex.code, file=sys.stderr)
         return None
@@ -345,6 +355,19 @@ def main():
     manual = json.load(open(map_path, encoding='utf-8')) if os.path.exists(map_path) else {}
     best, failed, used_fallback = {}, [], [False]
 
+    # Resume support. Without this, "re-run to retry the failures" was not true - every
+    # cluster was re-queried, which on a bandwidth-limited API is the difference between
+    # finishing and tripping the quota all over again.
+    fp_path = os.path.join(a.work, 'footprints.json')
+    prior = {}
+    if os.path.exists(fp_path):
+        cached = json.load(open(fp_path, encoding='utf-8'))
+        for f in cached.get('features', []):
+            best.setdefault(f['name'], f)
+        prior = cached.get('matched', {})
+        if prior:
+            print('resuming: %d point(s) already matched from a previous run' % len(prior))
+
     if a.from_file:
         print('reading reference features from %s' % a.from_file)
         collect(json.load(open(a.from_file, encoding='utf-8')), best)
@@ -352,6 +375,10 @@ def main():
         clusters = cluster_points(extents(pts, ev), a.link, a.max_span)
         print('%d points -> %d cluster(s); querying %s=%s per cluster' % (len(pts), len(clusters), k, v))
         for i, c in enumerate(clusters, 1):
+            if prior and all(str(m['idx']) in prior for m in c['members']):
+                print('  %2d/%d  %2d point(s)  already matched, skipping' % (
+                    i, len(clusters), len(c['members'])))
+                continue
             # Start tight and widen only on an empty result. Most clusters answer on the
             # first try, so the extra cost is paid exactly where it buys something: a
             # facility mapped further from its address than expected, or a point whose
@@ -386,9 +413,9 @@ def main():
                 i, len(clusters), len(c['members']), len(best) - before, widened), flush=True)
             time.sleep(2.5)
 
-    matched, unmatched = {}, []
+    matched, unmatched = dict(prior), []
     for p in pts:
-        f = resolve(p, best, manual)
+        f = resolve(p, best, manual) or prior.get(str(p['idx']))
         if f:
             matched[str(p['idx'])] = f
         else:
