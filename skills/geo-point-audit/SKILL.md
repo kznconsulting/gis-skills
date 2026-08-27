@@ -3,7 +3,7 @@ name: geo-point-audit
 description: Verify that the points in a geospatial dataset actually sit where they claim to, then publish a street-level audit artifact with corrected coordinates. Use this whenever someone doubts the placement of a point layer - "are these coordinates right", "the pins look off", "verify this dataset", "check these locations", "QA this shapefile", "some of these markers are in the wrong place" - or hands over a .shp/.geojson/.csv/.kml of facilities, clinics, schools, stores, offices, sites, assets, or stops and wants it checked. Also use for positional accuracy QA, geocoding validation, comparing a point layer against ground truth, or auditing an address-vs-coordinate mismatch. Triggers on shapefiles even when the user only names the folder ("that dataset in my downloads").
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Geo Point Audit
@@ -21,7 +21,14 @@ An Artifact with four things, in this order:
 3. **A full audit table** - offset, the footprint test, what physically stands at the recorded coordinate, verdict.
 4. **Corrected coordinates** - in WGS 84 and in the layer's own source CRS, so they can be written straight back.
 
-No map tiles anywhere. The Artifact CSP blocks external requests, so Leaflet and Mapbox are not options. Everything is vector geometry embedded in the page and drawn as SVG at view time, which is also why the artifact stays fast and works offline.
+No map tiles anywhere in that build. The Artifact CSP blocks external requests, so Leaflet and Mapbox are not options; everything is vector geometry embedded in the page and drawn as SVG at view time, which is also why the artifact stays fast and works offline.
+
+Two local variants exist for when you need imagery, because for "is this point on the building?" a satellite photo settles in a second what an outline argues for in a paragraph. Neither can be published as an Artifact - they load tiles, so they are files rather than links.
+
+- `build_report.py --live` - the same report, same design, but the inspector is a real Leaflet map on satellite imagery. Also ~25x smaller, since tiles replace the embedded road geometry.
+- `build_live_map.py` - just the map, full-screen, with a clickable list. Useful for a fast sweep.
+
+Publish the artifact to tell people what you found; use a live build to satisfy yourself first.
 
 ## Run order
 
@@ -41,6 +48,8 @@ uvx python $S/fetch_context.py                             --work $W
 # uvx --with pyproj python $S/adjudicate.py                 --work $W   # re-run to fold it in
 # ...write copy.json here (see below)...
 uvx python $S/build_report.py                              --work $W --out report.html
+uvx python $S/build_report.py --live                       --work $W --out report-live.html  # optional
+uvx python $S/build_live_map.py                            --work $W --out live-map.html    # optional
 ```
 
 `load_points.py --help` on any script lists its options. The two you will actually reach for:
