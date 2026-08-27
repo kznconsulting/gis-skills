@@ -33,6 +33,11 @@ would let one 3 km outlier manufacture a fake error with total confidence.
 the centre of a large campus, while a point 162 m out can be on a neighbour's lot. Distance alone
 ranks those backwards.
 
+![A point that passes](docs/example-correct.png)
+
+A pass looks like this: both markers inside the building outline, 17 m apart, and the recorded
+coordinate reverse-geocodes to the hospital's own emergency entrance.
+
 ![Inspector](docs/example-inspector.png)
 
 The report's inspector steps through every point: street network, building outline, recorded
