@@ -1,0 +1,13 @@
+# audit working directories - fetched data and intermediate JSON
+audit-work/
+*-work/
+report.html
+corrections.csv
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# macos
+.DS_Store
